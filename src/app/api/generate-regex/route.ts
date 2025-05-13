@@ -67,6 +67,53 @@ function parseUserInputToRegex(input: string): string {
   return result;
 }
 
+// Helper function to create a sample test string from smart syntax
+function createTestStringFromSmartSyntax(input: string): string {
+  let testString = '';
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] === '{') {
+      const endIndex = input.indexOf('}', i);
+      if (endIndex === -1) { // No closing brace, treat rest as literal
+        testString += input.substring(i);
+        break;
+      }
+      const placeholder = input.substring(i + 1, endIndex);
+      let sampleChar = '';
+      let foundPlaceholder = true;
+      switch (placeholder.toLowerCase()) {
+        case 'alpha': sampleChar = 'a'; break;
+        case 'lower': sampleChar = 'a'; break;
+        case 'upper': sampleChar = 'A'; break;
+        case 'num': case 'digit': sampleChar = '0'; break;
+        case 'alphanum': sampleChar = 'a'; break;
+        case 'word': sampleChar = 'w'; break;
+        case 'symbol': sampleChar = '!'; break;
+        case 'space': case 'whitespace': sampleChar = ' '; break;
+        case 'any': sampleChar = 'x'; break;
+        case 'sol': sampleChar = ''; break;
+        case 'eol': sampleChar = ''; break;
+        default:
+          foundPlaceholder = false;
+          break;
+      }
+      if (foundPlaceholder) {
+        testString += sampleChar;
+        i = endIndex + 1;
+      } else { // Not a recognized placeholder, treat {key} as literal
+        testString += input.substring(i, endIndex + 1);
+        i = endIndex + 1;
+      }
+    } else {
+      const nextBrace = input.indexOf('{', i);
+      const endOfLiteral = nextBrace === -1 ? input.length : nextBrace;
+      testString += input.substring(i, endOfLiteral);
+      i = endOfLiteral;
+    }
+  }
+  return testString;
+}
+
 // New function to generalize a pattern from two strings
 function generalizePattern(s1: string, s2: string): string {
   if (s1 === undefined || s2 === undefined) return '.+?'; // Should not happen with proper checks
@@ -225,16 +272,81 @@ export async function POST(request: NextRequest) {
       }
     } // End of 'else' for usesSmartSyntaxInDesired
 
+    // Fallback if generatedRegex is empty or only whitespace,
+    // and desiredMatches was provided and not empty,
+    // and desiredMatches was not something that should naturally parse to an empty-match regex like {sol}{eol}
+    const parsedDesiredForFallbackCheck = parseUserInputToRegex(desiredMatches);
+    if (
+      generatedRegex.trim() === '' &&
+      desiredMatches.trim() !== '' &&
+      !(parsedDesiredForFallbackCheck === '' || parsedDesiredForFallbackCheck === '^' || parsedDesiredForFallbackCheck === '$' || parsedDesiredForFallbackCheck === '^$')
+    ) {
+      generatedRegex = escapeRegex(desiredMatches);
+      if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
+      explanation += ` (Fallback to literal desired match as previous steps resulted in an empty regex).`;
+    }
+
+    // Process shouldNotMatch
     if (shouldNotMatch.length > 0) {
-      const notMatchRegexPatterns = shouldNotMatch.map(s => `(?!^${parseUserInputToRegex(s)}$)`);
-      generatedRegex = notMatchRegexPatterns.join('') + generatedRegex;
-      explanation += ` Excludes cases (smart syntax parsed): ${shouldNotMatch.map(s => `"${s}"`).join(', ')}.`;
+      const activelyExcludedItems: string[] = [];
+
+      for (const snmItem of shouldNotMatch) {
+        if (!snmItem.trim()) continue; // Skip empty SNM items
+
+        const parsedSnmRegexComponent = parseUserInputToRegex(snmItem);
+        // If snmItem is not empty but parsed to empty (e.g., due to only invalid placeholders not treated literally by parseUserInputToRegex - though current parse treats them literally)
+        // or if parsedSnmRegexComponent itself is empty for other reasons.
+        if (!parsedSnmRegexComponent && snmItem.trim()) {
+            console.warn(`Skipping shouldNotMatch item "${snmItem}" as it parsed to an empty regex component.`);
+            continue;
+        }
+        
+        const testStringForSnm = createTestStringFromSmartSyntax(snmItem);
+        let needsExclusion = false;
+
+        // Only test if generatedRegex is non-empty, OR if we're trying to exclude an empty match (testStringForSnm is empty).
+        if (generatedRegex.trim() || testStringForSnm === "") {
+            try {
+                const currentRegexObject = new RegExp(`^(${generatedRegex})$`);
+                if (testStringForSnm === "") { // Covers cases like {sol}{eol} or an empty snmItem string
+                    needsExclusion = currentRegexObject.test("");
+                } else { 
+                    needsExclusion = currentRegexObject.test(testStringForSnm);
+                }
+            } catch (e) {
+                // If current generatedRegex is invalid, it won't match anything.
+                needsExclusion = false; 
+                console.warn(`Could not test current generatedRegex ("${generatedRegex}") against "${testStringForSnm}" (from SNM item "${snmItem}") due to regex error: ${e instanceof Error ? e.message : String(e)}. Assuming no exclusion needed as current regex is broken.`);
+            }
+        } else {
+            // generatedRegex is empty and snmItem is not for an empty match. So, no match.
+            needsExclusion = false;
+        }
+
+        if (needsExclusion) {
+          generatedRegex = `(?!^${parsedSnmRegexComponent}$)${generatedRegex}`;
+          activelyExcludedItems.push(snmItem);
+        }
+      }
+
+      if (activelyExcludedItems.length > 0) {
+        if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
+        explanation += ` Actively excluded cases: ${activelyExcludedItems.map(s => `"${s}"`).join(', ')}.`;
+      } else if (shouldNotMatch.filter(s => s.trim()).length > 0) { // Check if there were non-empty SNM items
+        if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
+        explanation += ` All 'Should Not Match' cases were already avoided by the generated regex or the base regex was effectively empty.`;
+      }
     }
     
-    // Fallback if generatedRegex becomes empty for some reason but desiredMatches was present
-    if (!generatedRegex.trim() && desiredMatches.trim()) {
+    // Fallback if generatedRegex becomes empty AFTER shouldNotMatch processing (e.g. base was empty, and SNM items were also empty)
+    // and desiredMatches was present and not intended to be empty.
+    // This specific fallback might be redundant given the earlier one.
+    // If generatedRegex is just a series of (?!...) it's valid.
+    // If generatedRegex is "" AND desiredMatches was "abc", the earlier fallback should have caught it.
+    // Let's ensure the final regex is not empty if desiredMatches was non-empty and not {sol}{eol} etc.
+    if (generatedRegex.trim() === '' && desiredMatches.trim() !== '' && !(parsedDesiredForFallbackCheck === '' || parsedDesiredForFallbackCheck === '^' || parsedDesiredForFallbackCheck === '$' || parsedDesiredForFallbackCheck === '^$')) {
         generatedRegex = escapeRegex(desiredMatches);
-        explanation = `Matches the literal string: "${desiredMatches}" (fallback due to empty generation).`;
+        explanation = `Matches the literal string: "${desiredMatches}" (final fallback as regex was empty).`;
     }
 
     return NextResponse.json({ generatedRegex, regexExplanation: explanation });

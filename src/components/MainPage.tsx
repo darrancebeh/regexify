@@ -297,8 +297,8 @@ function MainPage() {
                     id="sampleText"
                     value={sampleText}
                     onChange={(e) => setSampleText(e.target.value)}
-                    rows={5}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 min-h-32"
+                    rows={3}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 min-h-20"
                     placeholder="Paste or type text here to test the generated regex against it..."
                 />
             </div>

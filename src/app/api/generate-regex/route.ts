@@ -19,6 +19,54 @@ function isAlphanumeric(str: string): boolean {
   return /^\w+$/.test(str); // \w includes underscore
 }
 
+// New function to parse user input with special placeholders into a regex string
+function parseUserInputToRegex(input: string): string {
+  let result = '';
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] === '{') {
+      const endIndex = input.indexOf('}', i);
+      if (endIndex === -1) { // No closing brace, treat rest as literal
+        result += escapeRegex(input.substring(i));
+        break;
+      }
+      const placeholder = input.substring(i + 1, endIndex);
+      let replacement = '';
+      let foundPlaceholder = true;
+      switch (placeholder.toLowerCase()) { // Case-insensitive placeholders
+        case 'alpha': replacement = '[a-zA-Z]'; break;
+        case 'lower': replacement = '[a-z]'; break;
+        case 'upper': replacement = '[A-Z]'; break;
+        case 'num': case 'digit': replacement = '\\d'; break;
+        case 'alphanum': replacement = '[a-zA-Z0-9]'; break;
+        case 'word': replacement = '\\w'; break; // Alphanumeric + underscore
+        case 'symbol': replacement = '[^A-Za-z0-9\\s]'; break; // Not letter, digit, or whitespace
+        case 'space': case 'whitespace': replacement = '\\s'; break;
+        case 'any': replacement = '.'; break;
+        case 'sol': replacement = '^'; break;
+        case 'eol': replacement = '$'; break;
+        default:
+          foundPlaceholder = false;
+          break;
+      }
+      if (foundPlaceholder) {
+        result += replacement;
+        i = endIndex + 1;
+      } else { // Not a recognized placeholder, treat {key} as literal
+        result += escapeRegex(input.substring(i, endIndex + 1));
+        i = endIndex + 1;
+      }
+    } else {
+      // Find next '{' or end of string for literal part
+      const nextBrace = input.indexOf('{', i);
+      const endOfLiteral = nextBrace === -1 ? input.length : nextBrace;
+      result += escapeRegex(input.substring(i, endOfLiteral));
+      i = endOfLiteral;
+    }
+  }
+  return result;
+}
+
 // New function to generalize a pattern from two strings
 function generalizePattern(s1: string, s2: string): string {
   if (s1 === undefined || s2 === undefined) return '.+?'; // Should not happen with proper checks
@@ -81,103 +129,106 @@ export async function POST(request: NextRequest) {
       ? shouldNotMatchInput.filter(item => typeof item === 'string' && item.trim() !== '')
       : (typeof shouldNotMatchInput === 'string' && shouldNotMatchInput.trim() !== '' ? [shouldNotMatchInput.trim()] : []);
 
-    let generatedRegex = escapeRegex(desiredMatches);
-    let explanation = `Matches the literal string: "${desiredMatches}".`;
+    let generatedRegex = '';
+    let explanation = '';
 
-    if (shouldMatch.length > 0) {
-      const firstShouldMatch = shouldMatch[0];
-      explanation = `Based on "${desiredMatches}" and "${firstShouldMatch}".`;
+    const usesSmartSyntaxInDesired = /\{[^}]+\}/.test(desiredMatches);
 
-      // Attempt email pattern generalization
-      const emailStructureRegex = /^([\w.-]+)@([\w.-]+)\.([a-zA-Z]{2,63})$/; // Common email structure
-      const desiredEmailParts = desiredMatches.match(emailStructureRegex);
-      const shouldMatchEmailParts = firstShouldMatch.match(emailStructureRegex);
+    if (usesSmartSyntaxInDesired) {
+      generatedRegex = parseUserInputToRegex(desiredMatches);
+      explanation = `Regex constructed from your smart syntax in "Desired Matches": "${desiredMatches}".`;
+      if (shouldMatch.length > 0) {
+        explanation += ` 'Should Match' examples are not used for generalization in this mode.`;
+      }
+    } else {
+      // Original logic when no smart syntax in desiredMatches
+      generatedRegex = escapeRegex(desiredMatches);
+      explanation = `Matches the literal string: "${desiredMatches}".`;
 
-      if (desiredEmailParts && shouldMatchEmailParts) {
-        const userGen = generalizePattern(desiredEmailParts[1], shouldMatchEmailParts[1]);
-        const domainGen = generalizePattern(desiredEmailParts[2], shouldMatchEmailParts[2]);
-        // TLDs are often specific, but generalizePattern can handle if they differ (e.g. com vs org)
-        const tldGen = generalizePattern(desiredEmailParts[3], shouldMatchEmailParts[3]);
+      if (shouldMatch.length > 0) {
+        const firstShouldMatch = shouldMatch[0];
+        // Check if firstShouldMatch uses smart syntax - if so, we can't use current generalization
+        const usesSmartSyntaxInShouldMatch = /\{[^}]+\}/.test(firstShouldMatch);
 
-        generatedRegex = `${userGen}@${domainGen}\\.${tldGen}`;
-        explanation = `Generalized as an email pattern. User part: ${userGen}, Domain part: ${domainGen}, TLD part: ${tldGen}.`;
-      
-      } else if (desiredMatches.length === firstShouldMatch.length && desiredMatches !== firstShouldMatch) {
-        let tempRegex = "";
-        let differencesFound = false;
-        for (let charIdx = 0; charIdx < desiredMatches.length; charIdx++) {
-          if (desiredMatches[charIdx] === firstShouldMatch[charIdx]) {
-            tempRegex += escapeRegex(desiredMatches[charIdx]);
-          } else {
-            differencesFound = true;
-            // Using generalizePattern for single characters might be overkill, direct set is fine
-            const chars = new Set([desiredMatches[charIdx], firstShouldMatch[charIdx]]);
-            tempRegex += `[${Array.from(chars).map(c => escapeRegex(c)).join('')}]`;
-          }
-        }
-        if (differencesFound) {
-            generatedRegex = tempRegex;
-            explanation = `Generalized character-by-character differences between "${desiredMatches}" and "${firstShouldMatch}".`;
+        if (usesSmartSyntaxInShouldMatch) {
+            explanation = `Based on literal "${desiredMatches}" and smart syntax in first "Should Match" example "${firstShouldMatch}". The "Should Match" example was parsed directly: ${parseUserInputToRegex(firstShouldMatch)}. This mode doesn't combine them further.`;
+            explanation += ` Using literal from "Desired Matches" as base. Smart syntax in "Should Match" is noted but not used for generalization against a literal "Desired Matches".`;
         } else {
-            // This case (same length, same content) means they are identical.
-            explanation = `"${desiredMatches}" and "${firstShouldMatch}" are identical. Using literal match for "${desiredMatches}".`;
-            generatedRegex = escapeRegex(desiredMatches); // Ensure it's the literal
-        }
+            explanation = `Based on "${desiredMatches}" and "${firstShouldMatch}".`; // Default explanation
 
-      } else if (desiredMatches !== firstShouldMatch) { // Different lengths or significantly different, and not emails
-        let commonPrefix = '';
-        let i = 0;
-        while (i < desiredMatches.length && i < firstShouldMatch.length && desiredMatches[i] === firstShouldMatch[i]) {
-          commonPrefix += desiredMatches[i];
-          i++;
-        }
+            // Attempt email pattern generalization (only if both are plain strings)
+            const emailStructureRegex = /^([\w.-]+)@([\w.-]+)\.([a-zA-Z]{2,63})$/;
+            const desiredEmailParts = desiredMatches.match(emailStructureRegex);
+            const shouldMatchEmailParts = firstShouldMatch.match(emailStructureRegex);
 
-        let commonSuffix = '';
-        let jDesired = desiredMatches.length - 1;
-        let jShould = firstShouldMatch.length - 1;
-        while (jDesired >= i && jShould >= i && desiredMatches[jDesired] === firstShouldMatch[jShould]) {
-          commonSuffix = desiredMatches[jDesired] + commonSuffix;
-          jDesired--;
-          jShould--;
-        }
-        
-        const desiredMiddle = desiredMatches.substring(i, jDesired + 1);
-        const shouldMatchMiddle = firstShouldMatch.substring(i, jShould + 1);
+            if (desiredEmailParts && shouldMatchEmailParts) {
+              const userGen = generalizePattern(desiredEmailParts[1], shouldMatchEmailParts[1]);
+              const domainGen = generalizePattern(desiredEmailParts[2], shouldMatchEmailParts[2]);
+              const tldGen = generalizePattern(desiredEmailParts[3], shouldMatchEmailParts[3]);
+              generatedRegex = `${userGen}@${domainGen}\\.${tldGen}`;
+              explanation = `Generalized as an email pattern. User part: ${userGen}, Domain part: ${domainGen}, TLD part: ${tldGen}.`;
+            } else if (desiredMatches.length === firstShouldMatch.length && desiredMatches !== firstShouldMatch) {
+              let tempRegex = "";
+              let differencesFound = false;
+              for (let charIdx = 0; charIdx < desiredMatches.length; charIdx++) {
+                if (desiredMatches[charIdx] === firstShouldMatch[charIdx]) {
+                  tempRegex += escapeRegex(desiredMatches[charIdx]);
+                } else {
+                  differencesFound = true;
+                  const chars = new Set([desiredMatches[charIdx], firstShouldMatch[charIdx]]);
+                  tempRegex += `[${Array.from(chars).map(c => escapeRegex(c)).join('')}]`;
+                }
+              }
+              if (differencesFound) {
+                  generatedRegex = tempRegex;
+                  explanation = `Generalized character-by-character differences between "${desiredMatches}" and "${firstShouldMatch}".`;
+              } else {
+                  explanation = `"${desiredMatches}" and "${firstShouldMatch}" are identical. Using literal match for "${desiredMatches}".`;
+                  generatedRegex = escapeRegex(desiredMatches);
+              }
+            } else if (desiredMatches !== firstShouldMatch) { // Different lengths
+              let commonPrefix = '';
+              let i = 0;
+              while (i < desiredMatches.length && i < firstShouldMatch.length && desiredMatches[i] === firstShouldMatch[i]) {
+                commonPrefix += desiredMatches[i];
+                i++;
+              }
+              let commonSuffix = '';
+              let jDesired = desiredMatches.length - 1;
+              let jShould = firstShouldMatch.length - 1;
+              while (jDesired >= i && jShould >= i && desiredMatches[jDesired] === firstShouldMatch[jShould]) {
+                commonSuffix = desiredMatches[jDesired] + commonSuffix;
+                jDesired--;
+                jShould--;
+              }
+              const desiredMiddle = desiredMatches.substring(i, jDesired + 1);
+              const shouldMatchMiddle = firstShouldMatch.substring(i, jShould + 1);
 
-        if (commonPrefix.length > 0 || commonSuffix.length > 0 || (desiredMiddle && shouldMatchMiddle)) {
-            let middlePattern = generalizePattern(desiredMiddle, shouldMatchMiddle);
-            
-            generatedRegex = escapeRegex(commonPrefix) + middlePattern + escapeRegex(commonSuffix);
-            explanation = `Generalized based on common prefix/suffix. Prefix: "${commonPrefix}", Middle: ${middlePattern}, Suffix: "${commonSuffix}".`;
-            if (!desiredMiddle && !shouldMatchMiddle && commonPrefix === desiredMatches && commonSuffix === "" && commonPrefix === firstShouldMatch){
-                 // This case means one string is a prefix of the other, or they are identical.
-                 // If identical, it's caught above. If one is prefix, generalizePattern might return empty or literal.
-                 // Example: "abc" and "ab" -> prefix "ab", desiredMiddle "c", shouldMatchMiddle "" -> middlePattern "c"
-                 // Example: "ab" and "abc" -> prefix "ab", desiredMiddle "", shouldMatchMiddle "c" -> middlePattern "c"
-                 // This seems fine.
-            } else if (!middlePattern && (desiredMiddle || shouldMatchMiddle)) {
-                 // If generalizePattern returned empty but there was content, default to wildcard
-                 middlePattern = '.+?';
-                 generatedRegex = escapeRegex(commonPrefix) + middlePattern + escapeRegex(commonSuffix);
-                 explanation = `Generalized with wildcard middle. Prefix: "${commonPrefix}", Suffix: "${commonSuffix}".`;
+              if (commonPrefix.length > 0 || commonSuffix.length > 0 || (desiredMiddle && shouldMatchMiddle)) {
+                  let middlePattern = generalizePattern(desiredMiddle, shouldMatchMiddle);
+                  generatedRegex = escapeRegex(commonPrefix) + middlePattern + escapeRegex(commonSuffix);
+                  explanation = `Generalized based on common prefix/suffix. Prefix: "${commonPrefix}", Middle: ${middlePattern}, Suffix: "${commonSuffix}".`;
+                  if (!middlePattern && (desiredMiddle || shouldMatchMiddle)) {
+                       middlePattern = '.+?';
+                       generatedRegex = escapeRegex(commonPrefix) + middlePattern + escapeRegex(commonSuffix);
+                       explanation = `Generalized with wildcard middle. Prefix: "${commonPrefix}", Suffix: "${commonSuffix}".`;
+                  }
+              } else {
+                 explanation = `"${desiredMatches}" and "${firstShouldMatch}" are too different for simple prefix/suffix generalization. Using base regex for "${desiredMatches}".`;
+                 generatedRegex = escapeRegex(desiredMatches);
+              }
             }
-
-
-        } else { // No common prefix/suffix, and middles are not both present or one is empty.
-           explanation = `"${desiredMatches}" and "${firstShouldMatch}" are too different for simple prefix/suffix generalization. Using base regex for "${desiredMatches}".`;
-           generatedRegex = escapeRegex(desiredMatches);
+        } // End of 'else' for usesSmartSyntaxInShouldMatch
+        if (shouldMatch.length > 1 && !usesSmartSyntaxInShouldMatch) {
+          explanation += ` (Note: Only the first 'Should Match' example is used for this generalization).`;
         }
       }
-      
-      if (shouldMatch.length > 1) {
-        explanation += ` (Note: Only the first 'Should Match' example is used for this generalization).`;
-      }
-    }
+    } // End of 'else' for usesSmartSyntaxInDesired
 
     if (shouldNotMatch.length > 0) {
-      const notMatchPatterns = shouldNotMatch.map(s => `(?!^${escapeRegex(s)}$)`);
-      generatedRegex = notMatchPatterns.join('') + generatedRegex;
-      explanation += ` Excludes cases: ${shouldNotMatch.join(', ')}.`;
+      const notMatchRegexPatterns = shouldNotMatch.map(s => `(?!^${parseUserInputToRegex(s)}$)`);
+      generatedRegex = notMatchRegexPatterns.join('') + generatedRegex;
+      explanation += ` Excludes cases (smart syntax parsed): ${shouldNotMatch.map(s => `"${s}"`).join(', ')}.`;
     }
     
     // Fallback if generatedRegex becomes empty for some reason but desiredMatches was present

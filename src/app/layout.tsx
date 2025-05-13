@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "{db} ReGex-ify",
-  description: "ReGex-ify is a ReGex (Regular Expressions) Generator",
+  title: "{db} RegEx-ify",
+  description: "RegEx-ify is a RegEx (Regular Expressions) Generator",
 };
 
 export default function RootLayout({

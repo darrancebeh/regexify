@@ -202,7 +202,7 @@ function MainPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">
-          Re:Gex-ify, a RegEx Generator.
+          Reg:Ex-ify, a RegEx Generator.
           <span className="text-sm font-normal text-gray-500 ml-2">by db</span>
         </h1>
         <button 

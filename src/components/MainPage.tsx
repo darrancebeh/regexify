@@ -151,18 +151,13 @@ function MainPage() {
             <h3 className="text-lg font-semibold mt-4 text-gray-800">7. Smart Syntax / Hottips (New!):</h3>
             <p>You can use special placeholders (hottips) in the <code>Desired Matches</code> and <code>Should Not Match</code> fields to directly build more complex regex patterns. If a placeholder is not recognized, it will be treated as literal text. Text outside of <code>{'{'}...{'}'}</code> is always treated as literal.</p>
             <p>
-              <strong>Note on Smart Syntax in "Desired Matches" vs. "Should Match Test Cases":</strong>
-            </p>
-            <p>
-              When you use Smart Syntax (e.g., <code>{'{'}num{'}'}</code>, <code>{'{'}alpha{'}'}</code>) in the <strong>Desired Matches</strong> field, you&apos;re directly telling Re:Gex-ify how to build the regex. For example, <code>ORDER-{'{\'}num{'}'}{'{'}num{'}'}</code> explicitly asks for "ORDER-" followed by two digits.
-            </p>
-            <p>
-              In this case, Re:Gex-ify constructs the regex based on your precise Smart Syntax. The &quot;Should Match Test Cases&quot; will <strong>not</strong> be used to further generalize or change this pattern. This is because Smart Syntax already provides the generalization (e.g., <code>{'{'}num{'}'}</code> is already general for any digit).
+              <strong>Note on Smart Syntax in &quot;Desired Matches&quot; vs. &quot;Should Match Test Cases&quot;:</strong>
             </p>
             <p>
               The &quot;Should Match Test Cases&quot; are primarily for helping Re:Gex-ify generalize when &quot;Desired Matches&quot; is a plain literal string (like <code>ORDER-12</code>). If you provide the generalization yourself using Smart Syntax in &quot;Desired Matches&quot;, that takes precedence. While &quot;Should Match Test Cases&quot; won&apos;t be used to <em>create</em> the regex in this mode, they remain useful for <em>testing</em> if the regex (built from your Smart Syntax) correctly matches these additional examples.
             </p>
-            <ul className="list-disc list-inside space-y-1 pl-4 mt-2 text-xs md:text-sm">
+            <p className="mt-2 font-semibold text-gray-700">Available Placeholders (Keys):</p>
+            <ul className="list-disc list-inside space-y-1 pl-4 mt-1 text-xs md:text-sm">
               <li><code>{'{'}alpha{'}'}</code> - Matches any uppercase or lowercase alphabet letter (e.g., <code>a-z, A-Z</code>). Equivalent to <code>[a-zA-Z]</code>.</li>
               <li><code>{'{'}lower{'}'}</code> - Matches any lowercase alphabet letter (e.g., <code>a-z</code>). Equivalent to <code>[a-z]</code>.</li>
               <li><code>{'{'}upper{'}'}</code> - Matches any uppercase alphabet letter (e.g., <code>A-Z</code>). Equivalent to <code>[A-Z]</code>.</li>
@@ -175,17 +170,26 @@ function MainPage() {
               <li><code>{'{'}sol{'}'}</code> - Matches the start of a line. Equivalent to <code>^</code>.</li>
               <li><code>{'{'}eol{'}'}</code> - Matches the end of a line. Equivalent to <code>$</code>.</li>
             </ul>
-            <p className="mt-2"><strong>Example Usage:</strong></p>
-            <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
-                <li>Desired Matches: <code>ID-{'{'}num{'}'}{'{'}num{'}'}{'{'}alpha{'}'}</code> could match <code>ID-12X</code>.</li>
-                <li>Should Not Match: <code>Error-{'{'}num{'}'}</code> would prevent matching lines like <code>Error-5</code>.</li>
+
+            <h4 className="text-md font-semibold mt-3 text-gray-800">Using Quantifiers with Smart Syntax:</h4>
+            <p className="text-xs md:text-sm">You can specify how many times a Smart Syntax placeholder should match by adding a quantifier. Replace <code>key</code> with any valid placeholder like <code>num</code>, <code>alpha</code>, etc. (e.g., <code>{'{'}num:2,4{'}'}</code>). The general forms are:</p>
+            <ul className="list-disc list-inside space-y-1 pl-4 mt-1 text-xs md:text-sm">
+              <li><code>{'{'}key:N{'}'}</code> - Matches the pattern for &apos;key&apos; exactly N times. Example: <code>{'{'}digit:3{'}'}</code> for three digits.</li>
+              <li><code>{'{'}key:N,M{'}'}</code> - Matches &apos;key&apos; from N to M times. Example: <code>{'{'}alpha:2,5{'}'}</code> for two to five letters.</li>
+              <li><code>{'{'}key:N,{'}'}</code> - Matches &apos;key&apos; N or more times. Example: <code>{'{'}word:3,{'}'}</code> for three or more word characters.</li>
+              <li><code>{'{'}key?{'}'}</code> - Matches &apos;key&apos; zero or one time (optional). Equivalent to <code>{'{'}key:0,1{'}'}</code>. Example: <code>{'{'}symbol?{'}'}</code>.</li>
+              <li><code>{'{'}key*{'}'}</code> - Matches &apos;key&apos; zero or more times. Equivalent to <code>{'{'}key:0,{'}'}</code>. Example: <code>{'{'}any*{'}'}</code>.</li>
+              <li><code>{'{'}key+{'}'}</code> - Matches &apos;key&apos; one or more times. Equivalent to <code>{'{'}key:1,{'}'}</code>. Example: <code>{'{'}num+{'}'}</code>.</li>
             </ul>
 
-            <h3 className="text-lg font-semibold mt-4 text-gray-800">8. Limitations:</h3>
-            <ul className="list-disc list-inside space-y-2 pl-4">
-              <li>Generalization logic (when not using Smart Syntax in Desired Matches) primarily uses the first &quot;Should Match&quot; example.</li>
-              <li>Ambiguous examples might lead to unexpected patterns.</li>
+            <p className="mt-2"><strong>Example Usage:</strong></p>
+            <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
+              <li>Desired Matches: <code>User{'{'}num+{'}'}</code> with Should Match: <code>User123</code> would generalize to match <code>User</code> followed by one or more digits. (Regex: <code>User\\d+</code>)</li>
+              <li>Should Not Match: <code>Error-{'{'}num+{'}'}</code> would prevent matching lines like <code>Error-5</code>, <code>Error-55</code>. (Regex: <code>(?!^Error-\\d+$)</code>)</li>
+              <li>Using <code>{'{'}any*{'}'}</code>: If Desired Matches is <code>prefix_{'{'}any*{'}'}_suffix</code>, it will match lines like <code>prefix_abc_suffix</code> or <code>prefix__suffix</code>.</li>
             </ul>
+
+            <h3 className="text-lg font-semibold mt-4 mb-2 text-gray-700">Real-time Regex Tester</h3>
           </div>
 
           {/* Sticky Footer */}
@@ -339,7 +343,7 @@ function MainPage() {
                             })}
                         </div>
                     ) : (
-                        <p className="text-gray-500 italic p-2 border border-dashed rounded-md min-h-[60px] flex items-center justify-center">Enter text in the "Test Text" area above to see live results.</p>
+                        <p className="text-gray-500 italic p-2 border border-dashed rounded-md min-h-[60px] flex items-center justify-center">Enter text in the &quot;Test Text&quot; area above to see live results.</p>
                     )
                 ) : (
                     <p className="text-gray-500 italic p-2 border border-dashed rounded-md min-h-[60px] flex items-center justify-center">Generate a regex first, then enter text above to test it.</p>

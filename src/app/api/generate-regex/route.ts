@@ -30,29 +30,63 @@ function parseUserInputToRegex(input: string): string {
         result += escapeRegex(input.substring(i));
         break;
       }
-      const placeholder = input.substring(i + 1, endIndex);
-      let replacement = '';
-      let foundPlaceholder = true;
-      switch (placeholder.toLowerCase()) { // Case-insensitive placeholders
-        case 'alpha': replacement = '[a-zA-Z]'; break;
-        case 'lower': replacement = '[a-z]'; break;
-        case 'upper': replacement = '[A-Z]'; break;
-        case 'num': case 'digit': replacement = '\\d'; break;
-        case 'alphanum': replacement = '[a-zA-Z0-9]'; break;
-        case 'word': replacement = '\\w'; break; // Alphanumeric + underscore
-        case 'symbol': replacement = '[^A-Za-z0-9\\s]'; break; // Not letter, digit, or whitespace
-        case 'space': case 'whitespace': replacement = '\\s'; break;
-        case 'any': replacement = '.'; break;
-        case 'sol': replacement = '^'; break;
-        case 'eol': replacement = '$'; break;
-        default:
-          foundPlaceholder = false;
-          break;
+      const fullPlaceholderContent = input.substring(i + 1, endIndex);
+      
+      let key = '';
+      let basePlaceholderRegex = '';
+      let quantifierSuffix = '';
+      let parsedSuccessfully = false;
+
+      // Regex to extract key and potential quantifier parts
+      // Group 1: key_name (e.g., num)
+      // Group 2: simple_quantifier (?, *, +)
+      // Group 3: N (min count for {N} or {N,M} or {N,})
+      // Group 4: M (max count for {N,M}) or empty string (for {N,})
+      const structureRegex = /^([a-zA-Z_]+)(?:(\?|\\*|\\+)|:(\d+)(?:,(\d*))?)?$/;
+      const match = fullPlaceholderContent.match(structureRegex);
+
+      if (match) {
+        key = match[1];
+        const simpleQuantifier = match[2];
+        const nVal = match[3];
+        const mVal = match[4]; // undefined if no comma, empty string if N,
+
+        let foundKey = true;
+        switch (key.toLowerCase()) {
+          case 'alpha': basePlaceholderRegex = '[a-zA-Z]'; break;
+          case 'lower': basePlaceholderRegex = '[a-z]'; break;
+          case 'upper': basePlaceholderRegex = '[A-Z]'; break;
+          case 'num': case 'digit': basePlaceholderRegex = '\\d'; break;
+          case 'alphanum': basePlaceholderRegex = '[a-zA-Z0-9]'; break;
+          case 'word': basePlaceholderRegex = '\\w'; break;
+          case 'symbol': basePlaceholderRegex = '[^A-Za-z0-9\\s]'; break;
+          case 'space': case 'whitespace': basePlaceholderRegex = '\\s'; break;
+          case 'any': basePlaceholderRegex = '.'; break;
+          case 'sol': basePlaceholderRegex = '^'; break;
+          case 'eol': basePlaceholderRegex = '$'; break;
+          default:
+            foundKey = false;
+            break;
+        }
+
+        if (foundKey) {
+          parsedSuccessfully = true;
+          if (simpleQuantifier) { // ?, *, +
+            quantifierSuffix = simpleQuantifier;
+          } else if (nVal) { // :N or :N,M or :N,
+            if (mVal !== undefined) { // :N,M or :N, (mVal can be empty string for N,)
+              quantifierSuffix = `{${nVal},${mVal}}`;
+            } else { // :N
+              quantifierSuffix = `{${nVal}}`;
+            }
+          }
+          result += basePlaceholderRegex + quantifierSuffix;
+          i = endIndex + 1;
+        }
       }
-      if (foundPlaceholder) {
-        result += replacement;
-        i = endIndex + 1;
-      } else { // Not a recognized placeholder, treat {key} as literal
+
+      if (!parsedSuccessfully) {
+        // Not a recognized placeholder or structure, treat {content} as literal
         result += escapeRegex(input.substring(i, endIndex + 1));
         i = endIndex + 1;
       }
@@ -78,29 +112,40 @@ function createTestStringFromSmartSyntax(input: string): string {
         testString += input.substring(i);
         break;
       }
-      const placeholder = input.substring(i + 1, endIndex);
+      const fullPlaceholderContent = input.substring(i + 1, endIndex);
+      
+      // Regex to extract key from potential quantifier syntax
+      const structureRegex = /^([a-zA-Z_]+)(?:(\?|\\*|\\+)|:(\d+)(?:,(\d*))?)?$/;
+      const match = fullPlaceholderContent.match(structureRegex);
+
+      let keyForTestString = fullPlaceholderContent; 
+      if (match) {
+        keyForTestString = match[1]; // Use only the base key for sample char generation
+      }
+
       let sampleChar = '';
-      let foundPlaceholder = true;
-      switch (placeholder.toLowerCase()) {
+      let foundPlaceholderKey = true;
+      switch (keyForTestString.toLowerCase()) {
         case 'alpha': sampleChar = 'a'; break;
         case 'lower': sampleChar = 'a'; break;
         case 'upper': sampleChar = 'A'; break;
         case 'num': case 'digit': sampleChar = '0'; break;
-        case 'alphanum': sampleChar = 'a'; break;
+        case 'alphanum': sampleChar = 'a'; break; // or '0'
         case 'word': sampleChar = 'w'; break;
         case 'symbol': sampleChar = '!'; break;
         case 'space': case 'whitespace': sampleChar = ' '; break;
         case 'any': sampleChar = 'x'; break;
-        case 'sol': sampleChar = ''; break;
-        case 'eol': sampleChar = ''; break;
+        case 'sol': sampleChar = ''; break; // Start of line doesn't add a char
+        case 'eol': sampleChar = ''; break; // End of line doesn't add a char
         default:
-          foundPlaceholder = false;
+          foundPlaceholderKey = false;
           break;
       }
-      if (foundPlaceholder) {
+
+      if (foundPlaceholderKey) {
         testString += sampleChar;
         i = endIndex + 1;
-      } else { // Not a recognized placeholder, treat {key} as literal
+      } else { // Not a recognized placeholder key, treat {content} as literal for test string
         testString += input.substring(i, endIndex + 1);
         i = endIndex + 1;
       }

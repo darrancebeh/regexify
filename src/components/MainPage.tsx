@@ -8,43 +8,196 @@ function MainPage() {
   const [shouldNotMatch, setShouldNotMatch] = useState('');
   const [generatedRegex, setGeneratedRegex] = useState('');
   const [regexExplanation, setRegexExplanation] = useState('');
-
-  useEffect(() => {
-    if (desiredMatches) {
-      // Basic regex generation: treat desiredMatches as a literal string for now
-      const escapedMatches = desiredMatches.replace(/[.*+?^${}()|[\\\\]]/g, '\\\\$&');
-      setGeneratedRegex(escapedMatches);
-      setRegexExplanation(`Matches the literal string: "${desiredMatches}"`);
-    } else {
-      setGeneratedRegex('');
-      setRegexExplanation('');
-    }
-  }, [desiredMatches]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showUserGuideModal, setShowUserGuideModal] = useState(false);
 
   useEffect(() => {
     if (generatedRegex && sampleText) {
       try {
-        // const regex = new RegExp(generatedRegex, 'g'); // Not used directly here, matching is in JSX
-      } catch (error) {
-        console.error("Error matching sample text:", error);
+        // const regex = new RegExp(generatedRegex, 'g'); // Test validity
+      } catch (err) {
+        console.error("Error with generated regex for sample text display:", err);
       }
     }
+  }, [generatedRegex, sampleText]);
 
-    if (generatedRegex && shouldNotMatch) {
-        try {
-            // const regex = new RegExp(generatedRegex, 'g'); // Not used directly here, matching is in JSX
-        } catch (error) {
-            console.error("Error testing shouldNotMatch cases:", error);
-        }
+  const handleGenerateRegex = async () => {
+    if (!desiredMatches.trim()) {
+      setGeneratedRegex('');
+      setRegexExplanation('Please enter desired matches to generate a regex.');
+      setError('');
+      return;
     }
-  }, [generatedRegex, sampleText, shouldNotMatch]);
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/generate-regex', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          desiredMatches,
+          shouldMatch: shouldMatch.split('\n').map(s => s.trim()).filter(s => s),
+          shouldNotMatch: shouldNotMatch.split('\n').map(s => s.trim()).filter(s => s),
+        }),
+      });
+
+      setIsLoading(false);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.details || `API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      setGeneratedRegex(data.generatedRegex || '');
+      setRegexExplanation(data.regexExplanation || 'No explanation provided.');
+
+    } catch (err) {
+      setIsLoading(false);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(`${errorMessage}`);
+      setRegexExplanation(`Error: ${errorMessage}`);
+      console.error("Error calling generate-regex API:", err);
+    }
+  };
+
+  const UserGuideModal = () => {
+    const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) {
+        setShowUserGuideModal(false);
+      }
+    };
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-4"
+        onClick={handleBackdropClick}
+      >
+        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full flex flex-col max-h-[90vh]">
+          {/* Sticky Header */}
+          <div className="flex justify-between items-center p-4 md:p-6 border-b border-gray-200 sticky top-0 bg-white rounded-t-lg z-10">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-800">Re:Gex-ify User Guide</h2>
+            <button 
+              onClick={() => setShowUserGuideModal(false)} 
+              className="text-gray-500 hover:text-gray-700 text-2xl font-semibold p-1 -mr-1 rounded-full hover:bg-gray-100"
+              aria-label="Close user guide"
+            >
+              &times;
+            </button>
+          </div>
+          
+          {/* Scrollable Content */}
+          <div className="text-gray-700 space-y-3 text-sm md:text-base p-4 md:p-6 overflow-y-auto flex-grow">
+            <p className="font-semibold">Welcome to <strong>Re:Gex-ify</strong>, your intelligent assistant for crafting regular expressions!</p>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">1. What is Re:Gex-ify?</h3>
+            <p>Re:Gex-ify helps you generate regular expressions (regex) by understanding your examples. Instead of writing complex regex syntax from scratch, you provide text samples, and Re:Gex-ify suggests a pattern.</p>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">2. How to Use Re:Gex-ify:</h3>
+            <p>The interface has a few key input fields:</p>
+            <ul className="list-disc list-inside space-y-2 pl-4">
+              <li>
+                <strong>Sample Text (Optional but Recommended):</strong>
+                <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
+                  <li><strong>Purpose:</strong> This is a larger piece of text where you want to find and highlight things that match your generated regex.</li>
+                  <li><strong>Example:</strong> If you&apos;re trying to extract email addresses, you might paste a paragraph containing several emails here.</li>
+                  <li><strong>Feedback:</strong> The &quot;Matches in Sample Text&quot; section will show you what parts of this text your current regex is highlighting.</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Desired Matches (Required):</strong>
+                <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
+                  <li><strong>Purpose:</strong> This is the most crucial input. Type or paste an exact example of what you want your regex to match. This is your primary instruction to the generator.</li>
+                  <li><strong>Example:</strong> If you want to match email addresses like &quot;user@example.com&quot;, you would type <code>user@example.com</code> here.</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Should Match Test Cases (Optional):</strong>
+                <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
+                  <li><strong>Purpose:</strong> Provide additional examples (one per line) that your final regex <em>must</em> successfully match. This helps Re:Gex-ify understand variations and generalize the pattern.</li>
+                  <li><strong>Example:</strong> If <code>Desired Matches</code> is <code>abc@gmail.com</code>, you could add <code>xyz@hotmail.com</code> and <code>123@sub.domain.co.uk</code> in &quot;Should Match Test Cases&quot;. Re:Gex-ify will try to create a regex that matches all these examples.</li>
+                  <li><strong>Note:</strong> Currently, the generator heavily prioritizes the <em>first</em> &quot;Should Match&quot; example for detailed generalization.</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Should Not Match Test Cases (Optional):</strong>
+                <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
+                  <li><strong>Purpose:</strong> Provide examples (one per line) that your final regex <em>must not</em> match. This is useful for excluding specific cases or refining the pattern.</li>
+                  <li><strong>Example:</strong> If your regex is trying to match all words except &quot;error&quot;, you might have <code>Desired Matches</code> as <code>warning</code>. You would put <code>error</code> in &quot;Should Not Match Test Cases&quot;.</li>
+                </ul>
+              </li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">3. Generating the Regex:</h3>
+            <p>Once you&apos;ve filled in at least <code>Desired Matches</code>, click the <strong>&quot;Generate Regex&quot;</strong> button.</p>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">4. Understanding the Output:</h3>
+            <ul className="list-disc list-inside space-y-2 pl-4">
+              <li><strong>Generated Regex:</strong> Displays the regex created. You can copy this.</li>
+              <li><strong>Regex Explanation:</strong> Provides a brief explanation of the regex.</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">5. Real-time Feedback:</h3>
+            <p>This section helps you test the generated regex instantly:</p>
+            <ul className="list-disc list-inside space-y-2 pl-4">
+              <li><strong>Matches in Sample Text:</strong> Highlights matches in your sample text.</li>
+              <li><strong>&quot;Should Match&quot; Test Case Results:</strong> Shows if each test case matches (green) or not (red).</li>
+              <li><strong>&quot;Should Not Match&quot; Test Case Results:</strong> Shows if each test case is correctly not matched (green) or incorrectly matched (red).</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">6. Tips for Best Results:</h3>
+            <ul className="list-disc list-inside space-y-2 pl-4">
+              <li>Start simple with a clear <code>Desired Matches</code>.</li>
+              <li>Iterate using &quot;Should Match&quot; and &quot;Should Not Match&quot; to refine.</li>
+              <li>Be specific with your examples.</li>
+              <li>Check explanations for clues.</li>
+              <li>Re:Gex-ify has special logic for email patterns.</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">7. Limitations:</h3>
+            <ul className="list-disc list-inside space-y-2 pl-4">
+              <li>Current generalization logic is not exhaustive and prioritizes the first &quot;Should Match&quot; example.</li>
+              <li>Ambiguous examples might lead to unexpected patterns.</li>
+            </ul>
+          </div>
+
+          {/* Sticky Footer */}
+          <div className="p-4 md:p-6 border-t border-gray-200 sticky bottom-0 bg-white rounded-b-lg z-10 text-right">
+            <button 
+              onClick={() => setShowUserGuideModal(false)} 
+              className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors duration-150"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">
-        Re:Gex-ify, a RegEx Generator.
-        <span className="text-sm font-normal text-gray-500 ml-2">by db</span>
-      </h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">
+          Re:Gex-ify, a RegEx Generator.
+          <span className="text-sm font-normal text-gray-500 ml-2">by db</span>
+        </h1>
+        <button 
+          onClick={() => setShowUserGuideModal(true)}
+          className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 font-semibold rounded-md hover:bg-gray-200 transition-colors duration-150 text-sm border border-gray-300 shadow-sm"
+          title="Open User Guide"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+          </svg>
+          User Guide
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
@@ -104,12 +257,28 @@ function MainPage() {
         </div>
       </div>
 
+      <div className="my-4">
+        <button
+          onClick={handleGenerateRegex}
+          disabled={isLoading || !desiredMatches.trim()}
+          className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-150"
+        >
+          {isLoading ? 'Generating...' : 'Generate Regex'}
+        </button>
+      </div>
+      
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md border border-red-300">
+          <p><strong className="font-semibold">Error:</strong> {error}</p>
+        </div>
+      )}
+
       <div className="mb-4">
         <h2 className="text-xl font-semibold">Generated Regex:</h2>
-        <pre className="bg-gray-800 text-white p-2 rounded-md overflow-x-auto">
-          {generatedRegex || 'No regex generated yet.'}
+        <pre className="bg-gray-800 text-white p-3 rounded-md overflow-x-auto text-sm">
+          {generatedRegex || (isLoading ? 'Loading...' : 'Click "Generate Regex" to see results.')}
         </pre>
-        <p className="text-sm text-gray-600 mt-1">{regexExplanation}</p>
+        <p className="text-sm text-gray-600 mt-1 italic">{regexExplanation || (isLoading ? 'Fetching explanation...' : 'No explanation yet.')}</p>
       </div>
 
       <div>
@@ -119,44 +288,78 @@ function MainPage() {
                 <h3 className="text-lg font-medium">Matches in Sample Text:</h3>
                 {sampleText && generatedRegex ? (
                     <div
-                    className="bg-gray-50 p-2 rounded-md whitespace-pre-wrap"
+                    className="bg-gray-50 p-2 rounded-md whitespace-pre-wrap border border-gray-200"
                     dangerouslySetInnerHTML={{
-                        __html: sampleText.replace(
-                        new RegExp(`(${generatedRegex})`, 'g'),
-                        '<strong class="bg-yellow-200">$1</strong>'
-                        ),
+                        __html: (() => {
+                            try {
+                                if (!generatedRegex.replace(/\(\?!\^.*?\$\)/g, '').trim()) {
+                                     return sampleText;
+                                }
+                                const re = new RegExp(`(${generatedRegex})`, 'g');
+                                return sampleText.replace(
+                                    re,
+                                    '<strong class="bg-yellow-200 px-1 rounded">$1</strong>'
+                                );
+                            } catch (e) {
+                                console.error("Invalid regex for highlighting:", generatedRegex, e);
+                                return `<span class="text-red-500">Error with current regex pattern for highlighting.</span><br/>${sampleText}`;
+                            }
+                        })()
                     }}
                     />
                 ) : (
-                    <p className="text-gray-500">Enter sample text and desired matches to see results.</p>
+                    <p className="text-gray-500 italic">Enter sample text and generate a regex to see results.</p>
                 )}
             </div>
             <div>
                 <h3 className="text-lg font-medium">Should Match&quot; Test Case Results:</h3>
-                {shouldMatch && generatedRegex ? (
-                shouldMatch.split('\\n').map((line, index) => (
-                    <div key={index} className={`p-1 ${new RegExp(`^${generatedRegex}$`).test(line) ? 'bg-green-100' : 'bg-red-100'}`}>
-                    {line} - {new RegExp(`^${generatedRegex}$`).test(line) ? 'Matches' : 'Does not match'}
-                    </div>
-                ))
+                {shouldMatch.trim() && generatedRegex ? (
+                shouldMatch.split('\n').map((line, index) => {
+                    if (!line.trim()) return null;
+                    let isMatch = false;
+                    let matchError = '';
+                    try {
+                        isMatch = new RegExp(`^${generatedRegex}$`).test(line);
+                    } catch (e) { 
+                        matchError = e instanceof Error ? e.message : "Invalid regex";
+                    }
+                    return (
+                        <div key={index} className={`p-1 text-sm rounded my-1 ${matchError ? 'bg-orange-100' : (isMatch ? 'bg-green-100' : 'bg-red-100')}`}>
+                         <span className="font-mono">{line}</span> - 
+                         {matchError ? <span className="text-orange-700"> Error: {matchError}</span> : (isMatch ? ' Matches' : ' Does not match')}
+                        </div>
+                    );
+                })
                 ) : (
-                <p className="text-gray-500">Enter &quot;Should Match&quot; test cases and generate a regex.</p>
+                <p className="text-gray-500 italic">Enter &quot;Should Match&quot; test cases and generate a regex.</p>
                 )}
             </div>
             <div>
                 <h3 className="text-lg font-medium">Should Not Match&quot; Test Case Results:</h3>
-                {shouldNotMatch && generatedRegex ? (
-                shouldNotMatch.split('\\n').map((line, index) => (
-                    <div key={index} className={`p-1 ${!new RegExp(`^${generatedRegex}$`).test(line) ? 'bg-green-100' : 'bg-red-100'}`}>
-                    {line} - {!new RegExp(`^${generatedRegex}$`).test(line) ? 'Does not match (Correct)' : 'Matches (Incorrect)'}
-                    </div>
-                ))
+                {shouldNotMatch.trim() && generatedRegex ? (
+                shouldNotMatch.split('\n').map((line, index) => {
+                    if (!line.trim()) return null;
+                    let isNotMatchCorrect = false;
+                    let matchError = '';
+                     try {
+                        isNotMatchCorrect = !new RegExp(`^${generatedRegex}$`).test(line);
+                    } catch (e) { 
+                        matchError = e instanceof Error ? e.message : "Invalid regex";
+                    }
+                    return (
+                        <div key={index} className={`p-1 text-sm rounded my-1 ${matchError ? 'bg-orange-100' : (isNotMatchCorrect ? 'bg-green-100' : 'bg-red-100')}`}>
+                        <span className="font-mono">{line}</span> - 
+                        {matchError ? <span className="text-orange-700"> Error: {matchError}</span> : (isNotMatchCorrect ? ' Does not match (Correct)' : ' Matches (Incorrect)')}
+                        </div>
+                    );
+                })
                 ) : (
-                <p className="text-gray-500">Enter &quot;Should Not Match&quot; test cases and generate a regex.</p>
+                <p className="text-gray-500 italic">Enter &quot;Should Not Match&quot; test cases and generate a regex.</p>
                 )}
             </div>
         </div>
       </div>
+      {showUserGuideModal && <UserGuideModal />}
     </div>
   );
 }

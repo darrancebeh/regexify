@@ -92,14 +92,6 @@ function MainPage() {
             <p>The interface has a few key input fields:</p>
             <ul className="list-disc list-inside space-y-2 pl-4">
               <li>
-                <strong>Sample Text (Optional but Recommended):</strong>
-                <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
-                  <li><strong>Purpose:</strong> This is a larger piece of text where you want to find and highlight things that match your generated regex.</li>
-                  <li><strong>Example:</strong> If you&apos;re trying to extract email addresses, you might paste a paragraph containing several emails here.</li>
-                  <li><strong>Feedback:</strong> The &quot;Matches in Sample Text&quot; section will show you what parts of this text your current regex is highlighting.</li>
-                </ul>
-              </li>
-              <li>
                 <strong>Desired Matches (Required):</strong>
                 <ul className="list-circle list-inside pl-4 space-y-1 text-xs md:text-sm">
                   <li><strong>Purpose:</strong> This is the most crucial input. Type or paste an exact example of what you want your regex to match. This is your primary instruction to the generator.</li>
@@ -148,7 +140,7 @@ function MainPage() {
               <li><strong>New:</strong> Use Smart Syntax (see section below) for more direct regex construction.</li>
             </ul>
 
-            <h3 className="text-lg font-semibold mt-4 text-gray-800">7. Smart Syntax / Hottips (New!):</h3>
+            <h3 className="text-lg font-semibold mt-4 text-gray-800">7. Smart Syntax / Hottips:</h3>
             <p>You can use special placeholders (hottips) in the <code>Desired Matches</code> and <code>Should Not Match</code> fields to directly build more complex regex patterns. If a placeholder is not recognized, it will be treated as literal text. Text outside of <code>{'{'}...{'}'}</code> is always treated as literal.</p>
             <p>
               <strong>Note on Smart Syntax in &quot;Desired Matches&quot; vs. &quot;Should Match Test Cases&quot;:</strong>
@@ -169,6 +161,8 @@ function MainPage() {
               <li><code>{'{'}any{'}'}</code> - Matches any single character (except newline). Equivalent to <code>.</code>.</li>
               <li><code>{'{'}sol{'}'}</code> - Matches the start of a line. Equivalent to <code>^</code>.</li>
               <li><code>{'{'}eol{'}'}</code> - Matches the end of a line. Equivalent to <code>$</code>.</li>
+              <li><code>{'{'}url{'}'}</code> - Matches a URL (e.g., http://example.com, https://www.google.com/search?q=regex).</li>
+              <li><code>{'{'}ipv4{'}'}</code> - Matches an IPv4 address (e.g., 192.168.1.1, 10.0.0.255).</li>
             </ul>
 
             <h4 className="text-md font-semibold mt-3 text-gray-800">Using Quantifiers with Smart Syntax:</h4>
@@ -188,8 +182,6 @@ function MainPage() {
               <li>Should Not Match: <code>Error-{'{'}num+{'}'}</code> would prevent matching lines like <code>Error-5</code>, <code>Error-55</code>. (Regex: <code>(?!^Error-\\d+$)</code>)</li>
               <li>Using <code>{'{'}any*{'}'}</code>: If Desired Matches is <code>prefix_{'{'}any*{'}'}_suffix</code>, it will match lines like <code>prefix_abc_suffix</code> or <code>prefix__suffix</code>.</li>
             </ul>
-
-            <h3 className="text-lg font-semibold mt-4 mb-2 text-gray-700">Real-time Regex Tester</h3>
           </div>
 
           {/* Sticky Footer */}

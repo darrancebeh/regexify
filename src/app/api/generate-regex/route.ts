@@ -6,6 +6,14 @@ function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// New helper function to append to explanation consistently
+function appendToExplanation(currentExplanation: string, addition: string): string {
+  if (currentExplanation.trim() && !currentExplanation.endsWith('.') && !currentExplanation.endsWith('?') && !currentExplanation.endsWith('!')) {
+    currentExplanation += '.';
+  }
+  return currentExplanation.trim() + ' ' + addition;
+}
+
 // New helper functions for character type detection
 function isDigits(str: string): boolean {
   return /^\d+$/.test(str);
@@ -18,6 +26,25 @@ function isLetters(str: string): boolean {
 function isAlphanumeric(str: string): boolean {
   return /^\w+$/.test(str); // \w includes underscore
 }
+
+// Smart syntax definitions
+const smartSyntaxDefinitions: { [key: string]: { regex: string; description: string; example: string } } = {
+  'alpha': { regex: '[a-zA-Z]', description: 'any alphabet letter (a-z, A-Z)', example: 'a' },
+  'lower': { regex: '[a-z]', description: 'any lowercase letter', example: 'x' },
+  'upper': { regex: '[A-Z]', description: 'any uppercase letter', example: 'X' },
+  'num': { regex: '\\d', description: 'any digit (0-9)', example: '1' },
+  'digit': { regex: '\\d', description: 'any digit (0-9)', example: '2' },
+  'alphanum': { regex: '[a-zA-Z0-9]', description: 'any letter or digit', example: 'b' },
+  'word': { regex: '\\w', description: 'any word character (alphanumeric plus underscore)', example: 'w' },
+  'symbol': { regex: '[^A-Za-z0-9\\s]', description: 'common symbols', example: '$' },
+  'space': { regex: '\\s', description: 'any whitespace character', example: ' ' },
+  'whitespace': { regex: '\\s', description: 'any whitespace character', example: '\\t' },
+  'any': { regex: '.', description: 'any single character (except newline)', example: '*' },
+  'sol': { regex: '^', description: 'start of line', example: '' }, // Example for SOL is tricky, represents a position
+  'eol': { regex: '$', description: 'end of line', example: '' },   // Example for EOL is tricky
+  'url': { regex: 'https?://(?:www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b(?:[-a-zA-Z0-9()@:%_\\+.~#?&//=]*)', description: 'a URL (e.g., http://example.com)', example: 'http://example.com' },
+  'ipv4': { regex: '(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)', description: 'an IPv4 address (e.g., 192.168.1.1)', example: '192.168.1.1' },
+};
 
 // New function to parse user input with special placeholders into a regex string
 function parseUserInputToRegex(input: string): string {
@@ -51,25 +78,9 @@ function parseUserInputToRegex(input: string): string {
         const nVal = match[3];
         const mVal = match[4]; // undefined if no comma, empty string if N,
 
-        let foundKey = true;
-        switch (key.toLowerCase()) {
-          case 'alpha': basePlaceholderRegex = '[a-zA-Z]'; break;
-          case 'lower': basePlaceholderRegex = '[a-z]'; break;
-          case 'upper': basePlaceholderRegex = '[A-Z]'; break;
-          case 'num': case 'digit': basePlaceholderRegex = '\\d'; break;
-          case 'alphanum': basePlaceholderRegex = '[a-zA-Z0-9]'; break;
-          case 'word': basePlaceholderRegex = '\\w'; break;
-          case 'symbol': basePlaceholderRegex = '[^A-Za-z0-9\\s]'; break;
-          case 'space': case 'whitespace': basePlaceholderRegex = '\\s'; break;
-          case 'any': basePlaceholderRegex = '.'; break;
-          case 'sol': basePlaceholderRegex = '^'; break;
-          case 'eol': basePlaceholderRegex = '$'; break;
-          default:
-            foundKey = false;
-            break;
-        }
-
-        if (foundKey) {
+        const definition = smartSyntaxDefinitions[key.toLowerCase()];
+        if (definition) {
+          basePlaceholderRegex = definition.regex;
           parsedSuccessfully = true;
           if (simpleQuantifier) { // ?, *, +
             quantifierSuffix = simpleQuantifier;
@@ -103,60 +114,10 @@ function parseUserInputToRegex(input: string): string {
 
 // Helper function to create a sample test string from smart syntax
 function createTestStringFromSmartSyntax(input: string): string {
-  let testString = '';
-  let i = 0;
-  while (i < input.length) {
-    if (input[i] === '{') {
-      const endIndex = input.indexOf('}', i);
-      if (endIndex === -1) { // No closing brace, treat rest as literal
-        testString += input.substring(i);
-        break;
-      }
-      const fullPlaceholderContent = input.substring(i + 1, endIndex);
-      
-      // Regex to extract key from potential quantifier syntax
-      const structureRegex = /^([a-zA-Z_]+)(?:(\?|\\*|\\+)|:(\d+)(?:,(\d*))?)?$/;
-      const match = fullPlaceholderContent.match(structureRegex);
-
-      let keyForTestString = fullPlaceholderContent; 
-      if (match) {
-        keyForTestString = match[1]; // Use only the base key for sample char generation
-      }
-
-      let sampleChar = '';
-      let foundPlaceholderKey = true;
-      switch (keyForTestString.toLowerCase()) {
-        case 'alpha': sampleChar = 'a'; break;
-        case 'lower': sampleChar = 'a'; break;
-        case 'upper': sampleChar = 'A'; break;
-        case 'num': case 'digit': sampleChar = '0'; break;
-        case 'alphanum': sampleChar = 'a'; break; // or '0'
-        case 'word': sampleChar = 'w'; break;
-        case 'symbol': sampleChar = '!'; break;
-        case 'space': case 'whitespace': sampleChar = ' '; break;
-        case 'any': sampleChar = 'x'; break;
-        case 'sol': sampleChar = ''; break; // Start of line doesn't add a char
-        case 'eol': sampleChar = ''; break; // End of line doesn't add a char
-        default:
-          foundPlaceholderKey = false;
-          break;
-      }
-
-      if (foundPlaceholderKey) {
-        testString += sampleChar;
-        i = endIndex + 1;
-      } else { // Not a recognized placeholder key, treat {content} as literal for test string
-        testString += input.substring(i, endIndex + 1);
-        i = endIndex + 1;
-      }
-    } else {
-      const nextBrace = input.indexOf('{', i);
-      const endOfLiteral = nextBrace === -1 ? input.length : nextBrace;
-      testString += input.substring(i, endOfLiteral);
-      i = endOfLiteral;
-    }
-  }
-  return testString;
+  return input.replace(/\{([a-zA-Z0-9_]+)([:?*+]\S*)?\}/g, (match, key) => {
+    const definition = smartSyntaxDefinitions[key.toLowerCase()];
+    return definition ? definition.example : match; // Use example from definition
+  });
 }
 
 // New function to generalize a pattern from two strings
@@ -320,52 +281,55 @@ export async function POST(request: NextRequest) {
     // Fallback if generatedRegex is empty or only whitespace,
     // and desiredMatches was provided and not empty,
     // and desiredMatches was not something that should naturally parse to an empty-match regex like {sol}{eol}
-    const parsedDesiredForFallbackCheck = parseUserInputToRegex(desiredMatches);
+    const parsedDesiredForFallbackCheckInitial = parseUserInputToRegex(desiredMatches); // Renamed variable
     if (
       generatedRegex.trim() === '' &&
       desiredMatches.trim() !== '' &&
-      !(parsedDesiredForFallbackCheck === '' || parsedDesiredForFallbackCheck === '^' || parsedDesiredForFallbackCheck === '$' || parsedDesiredForFallbackCheck === '^$')
+      !(parsedDesiredForFallbackCheckInitial === '' || parsedDesiredForFallbackCheckInitial === '^' || parsedDesiredForFallbackCheckInitial === '$' || parsedDesiredForFallbackCheckInitial === '^$')
     ) {
       generatedRegex = escapeRegex(desiredMatches);
-      if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
-      explanation += ` (Fallback to literal desired match as previous steps resulted in an empty regex).`;
+      explanation = appendToExplanation(explanation, `(Fallback to literal desired match as previous steps resulted in an empty regex).`);
     }
 
     // Process shouldNotMatch
     if (shouldNotMatch.length > 0) {
       const activelyExcludedItems: string[] = [];
+      let contradictionFound = false;
 
       for (const snmItem of shouldNotMatch) {
-        if (!snmItem.trim()) continue; // Skip empty SNM items
+        if (!snmItem.trim()) continue;
 
         const parsedSnmRegexComponent = parseUserInputToRegex(snmItem);
-        // If snmItem is not empty but parsed to empty (e.g., due to only invalid placeholders not treated literally by parseUserInputToRegex - though current parse treats them literally)
-        // or if parsedSnmRegexComponent itself is empty for other reasons.
         if (!parsedSnmRegexComponent && snmItem.trim()) {
-            console.warn(`Skipping shouldNotMatch item "${snmItem}" as it parsed to an empty regex component.`);
-            continue;
+          console.warn(`Skipping shouldNotMatch item "${snmItem}" as it parsed to an empty regex component.`);
+          continue;
         }
-        
+
+        // Check for direct contradiction
+        if (generatedRegex.trim() !== '' && parsedSnmRegexComponent === generatedRegex) {
+          generatedRegex = '(?!)'; // Regex that never matches
+          explanation = `Contradiction: The 'Should Not Match' item "${snmItem}" directly negates the entire pattern. The regex will not match anything.`;
+          contradictionFound = true;
+          break; // No need to process further SNM items
+        }
+
         const testStringForSnm = createTestStringFromSmartSyntax(snmItem);
         let needsExclusion = false;
 
-        // Only test if generatedRegex is non-empty, OR if we're trying to exclude an empty match (testStringForSnm is empty).
         if (generatedRegex.trim() || testStringForSnm === "") {
-            try {
-                const currentRegexObject = new RegExp(`^(${generatedRegex})$`);
-                if (testStringForSnm === "") { // Covers cases like {sol}{eol} or an empty snmItem string
-                    needsExclusion = currentRegexObject.test("");
-                } else { 
-                    needsExclusion = currentRegexObject.test(testStringForSnm);
-                }
-            } catch (e) {
-                // If current generatedRegex is invalid, it won't match anything.
-                needsExclusion = false; 
-                console.warn(`Could not test current generatedRegex ("${generatedRegex}") against "${testStringForSnm}" (from SNM item "${snmItem}") due to regex error: ${e instanceof Error ? e.message : String(e)}. Assuming no exclusion needed as current regex is broken.`);
+          try {
+            const currentRegexObject = new RegExp(`^(${generatedRegex})$`);
+            if (testStringForSnm === "") {
+              needsExclusion = currentRegexObject.test("");
+            } else {
+              needsExclusion = currentRegexObject.test(testStringForSnm);
             }
-        } else {
-            // generatedRegex is empty and snmItem is not for an empty match. So, no match.
+          } catch (e) {
             needsExclusion = false;
+            console.warn(`Could not test current generatedRegex ("${generatedRegex}") against "${testStringForSnm}" (from SNM item "${snmItem}") due to regex error: ${e instanceof Error ? e.message : String(e)}. Assuming no exclusion needed as current regex is broken.`);
+          }
+        } else {
+          needsExclusion = false;
         }
 
         if (needsExclusion) {
@@ -374,24 +338,35 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (activelyExcludedItems.length > 0) {
-        if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
-        explanation += ` Actively excluded cases: ${activelyExcludedItems.map(s => `"${s}"`).join(', ')}.`;
-      } else if (shouldNotMatch.filter(s => s.trim()).length > 0) { // Check if there were non-empty SNM items
-        if (explanation.trim() && !explanation.endsWith('.')) explanation += '.';
-        explanation += ` All 'Should Not Match' cases were already avoided by the generated regex or the base regex was effectively empty.`;
+      if (!contradictionFound) {
+        if (activelyExcludedItems.length > 0) {
+          explanation = appendToExplanation(explanation, `Actively excluded cases: ${activelyExcludedItems.map(s => `"${s}"`).join(', ')}.`);
+        } else if (shouldNotMatch.filter(s => s.trim()).length > 0) {
+          explanation = appendToExplanation(explanation, `All 'Should Not Match' cases were already avoided by the generated regex or the base regex was effectively empty.`);
+        }
       }
     }
-    
-    // Fallback if generatedRegex becomes empty AFTER shouldNotMatch processing (e.g. base was empty, and SNM items were also empty)
-    // and desiredMatches was present and not intended to be empty.
-    // This specific fallback might be redundant given the earlier one.
-    // If generatedRegex is just a series of (?!...) it's valid.
-    // If generatedRegex is "" AND desiredMatches was "abc", the earlier fallback should have caught it.
-    // Let's ensure the final regex is not empty if desiredMatches was non-empty and not {sol}{eol} etc.
-    if (generatedRegex.trim() === '' && desiredMatches.trim() !== '' && !(parsedDesiredForFallbackCheck === '' || parsedDesiredForFallbackCheck === '^' || parsedDesiredForFallbackCheck === '$' || parsedDesiredForFallbackCheck === '^$')) {
-        generatedRegex = escapeRegex(desiredMatches);
-        explanation = `Matches the literal string: "${desiredMatches}" (final fallback as regex was empty).`;
+
+    // Final fallback logic, adjusted for contradiction
+    // const parsedDesiredForFallbackCheck = parseUserInputToRegex(desiredMatches); // This line is removed, use parsedDesiredForFallbackCheckInitial
+    if (
+      generatedRegex.trim() === '' &&
+      desiredMatches.trim() !== '' &&
+      !(parsedDesiredForFallbackCheckInitial === '' || parsedDesiredForFallbackCheckInitial === '^' || parsedDesiredForFallbackCheckInitial === '$' || parsedDesiredForFallbackCheckInitial === '^$')
+    ) {
+      // This block should ideally not be reached if a contradiction set generatedRegex to '(?!)'
+      // because '(?!)' is not empty.
+      // However, if it somehow becomes empty AND there was no contradiction, apply fallback.
+      generatedRegex = escapeRegex(desiredMatches);
+      explanation = `Matches the literal string: "${desiredMatches}" (final fallback as regex was empty).`;
+    } else if (generatedRegex === '(?!)' && explanation.includes('Contradiction')) {
+      // Explanation is already set for contradiction, do nothing more here.
+    } else if (generatedRegex.trim() === '' && (parsedDesiredForFallbackCheckInitial === '' || parsedDesiredForFallbackCheckInitial === '^' || parsedDesiredForFallbackCheckInitial === '$' || parsedDesiredForFallbackCheckInitial === '^$')) {
+      // If desired match is meant to be empty (like {sol}{eol}) and regex is empty, that's fine.
+      // Explanation should reflect this from earlier stages.
+      if (explanation.trim() === '' || explanation.startsWith('Matches the literal string:') || explanation.endsWith('(Fallback to literal desired match as previous steps resulted in an empty regex).')) { // Avoid overwriting specific smart syntax explanations or the initial fallback explanation
+         explanation = appendToExplanation(explanation, `The regex matches an empty string or specific position based on input like "${desiredMatches}".`);
+      }
     }
 
     return NextResponse.json({ generatedRegex, regexExplanation: explanation });

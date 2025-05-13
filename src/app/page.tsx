@@ -3,9 +3,9 @@ import Footer from "@/components/Footer";
 
 export default function Home() {
   return (
-    <>
-    <MainPage />
-    <Footer />
-    </>
+    <div className="flex flex-col flex-grow min-h-0"> 
+      <MainPage />
+      <Footer />
+    </div>
   );
 }
